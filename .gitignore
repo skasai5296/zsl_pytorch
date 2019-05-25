@@ -1,6 +1,5 @@
 dataset/
 models/
-src/
 
 *.log
 .DS_Store
