@@ -27,8 +27,8 @@ def get_default_image_loader():
 
 class AnimalsWithAttributes(Dataset):
     """
-    self.classlist : list of names for classes
-    self.subclasslist : list of names for {seen, unseen} classes for mode {train|val, test}
+    self.allclasslist : list of names for classes
+    self.classlist : list of names for {seen, unseen} classes for mode {train|val, test}
     self.attrlist : list of names for attributes
     self.cls2attr : numpy.array of (num_classes x num_attrs), binary
     """
@@ -40,7 +40,7 @@ class AnimalsWithAttributes(Dataset):
         class_dir = os.path.join(root_dir, "classes.txt")
         with open(class_dir, "r") as f:
             classlist = f.readlines()
-        self.classlist = [classname.strip().split()[1] for classname in classlist]
+        self.allclasslist = [classname.strip().split()[1] for classname in classlist]
 
         if self.mode in ['train', 'val']:
             subclass_dir = os.path.join(root_dir, "trainclasses.txt")
@@ -48,7 +48,7 @@ class AnimalsWithAttributes(Dataset):
             subclass_dir = os.path.join(root_dir, "testclasses.txt")
         with open(subclass_dir, "r") as f:
             subclasslist = f.readlines()
-        self.subclasslist = [classname.strip() for classname in subclasslist]
+        self.classlist = [classname.strip() for classname in subclasslist]
 
         attr_dir = os.path.join(root_dir, "predicates.txt")
         with open(attr_dir, "r") as f:
@@ -63,32 +63,33 @@ class AnimalsWithAttributes(Dataset):
         self.img_dir = os.path.join(root_dir, "JPEGImages")
         self.paths = []
         self.sizes = []
-        for idx, cl in enumerate(self.subclasslist):
+        for idx, cl in enumerate(self.classlist):
             filelist = os.listdir(os.path.join(self.img_dir, cl))
             self.sizes.append(len(filelist))
             self.paths.extend([os.path.join(self.img_dir, cl, file) for file in filelist])
         self.len = len(self.paths)
         self.ranges = np.cumsum(self.sizes)
-        print("{} dataset loaded, {} images".format(self.mode, self.len))
+        print('completed loading dataset ({}), length is {}'.format(self.mode, self.len), flush=True)
 
         self.loader = loader
         self.transforms = transforms
-
 
     def __len__(self):
         return self.len
 
     def __getitem__(self, idx):
         img = self.loader(self.paths[idx])
-        onehot = np.zeros(len(self.classlist))
+        onehot = np.zeros(len(self.allclasslist))
         for i, num in enumerate(self.ranges):
             if idx < num:
-                cl = i
-                onehot[i] = 1
+                cl = self.classlist[i]
+                index = self.allclasslist.index(cl)
+                onehot[index] = 1
                 break
-        att = self.cls2attr[cl]
+        att = self.cls2attr[index]
+        if self.transforms:
+            self.transforms(img)
         return {'image': img, 'attributes': att, 'class': onehot}
-        pass
 
 class SUN_Attributes(Dataset):
     '''
@@ -99,7 +100,7 @@ class SUN_Attributes(Dataset):
     transform : how to transform images, should be from torchvision.transforms
     train : True for training
     '''
-    def __init__(self, root_dir, image_dir, ann_dir, transform=None, train=True):
+    def __init__(self, root_dir, image_dir, ann_dir, transform=None, mode='train'):
         img_dir = os.path.join(root_dir, image_dir)
         att_dir = os.path.join(root_dir, ann_dir, 'attributeLabels_continuous.mat')
         imgn_dir = os.path.join(root_dir, ann_dir, 'images.mat')
@@ -113,13 +114,15 @@ class SUN_Attributes(Dataset):
         self.feature_size = len(self.attrnames)
         self.idx = np.arange(self.len)
         np.random.shuffle(self.idx)
-        if train:
-            self.dataidx = self.idx[:self.len*4//5]
+        if self.mode == 'train':
+            self.dataidx = self.idx[:self.len*3//5]
+        elif self.mode == 'val':
+            self.dataidx = self.idx[self.len*3//5:self.len*4//5]
         else:
             self.dataidx = self.idx[self.len*4//5:]
         self.transform = transform
 
-        print('completed loading dataset (Training = {}), length is {}'.format(train, self.len), flush=True)
+        print('completed loading dataset ({}), length is {}'.format(self.mode, self.len), flush=True)
 
     def __len__(self):
         return self.len
